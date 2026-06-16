@@ -1,4 +1,7 @@
 $ErrorActionPreference = "Stop"
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 $RepoName = "kicad-ai-agent"
 $Owner = "SellenChen"
