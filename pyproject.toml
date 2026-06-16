@@ -1,0 +1,19 @@
+[project]
+name = "kicad-ai-agent"
+version = "0.2.0b1"
+description = "Windows KiCad AI Agent Beta with local side panel and CLI validation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SellenChen" }]
+keywords = ["kicad", "eda", "ai-agent", "copilot", "electronics"]
+
+[project.scripts]
+kicad-ai-agent = "kicad_ai_agent.server:main"
+
+[tool.setuptools]
+package-dir = { "" = "app" }
+
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["kicad_ai_agent*"]

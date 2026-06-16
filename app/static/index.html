@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KiCad AI Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <header class="topbar">
+        <div>
+          <h1>KiCad AI Agent</h1>
+          <p id="projectPath">正在读取工程...</p>
+        </div>
+        <button id="refreshBtn" title="刷新工程">↻</button>
+      </header>
+
+      <section class="summary-grid" id="summaryGrid">
+        <div><span>符号</span><strong>--</strong></div>
+        <div><span>连线</span><strong>--</strong></div>
+        <div><span>标签</span><strong>--</strong></div>
+        <div><span>版本</span><strong>--</strong></div>
+      </section>
+
+      <main class="chat" id="chatLog">
+        <article class="message agent">
+          <p>我已经连接到本地 KiCad 工程。可以让我修改元件参数、运行 ERC、导出 netlist，或解释检查结果。</p>
+        </article>
+      </main>
+
+      <section class="tools">
+        <button id="validateBtn">ERC + Netlist</button>
+        <button id="explainErcBtn">解释 ERC</button>
+        <button id="spiceBtn">导出 SPICE</button>
+        <button id="snapshotsBtn">快照</button>
+      </section>
+
+      <section class="search">
+        <input id="searchInput" placeholder="搜索符号/封装，例如 resistor、SOT" />
+        <button id="symbolSearchBtn">符号</button>
+        <button id="footprintSearchBtn">封装</button>
+      </section>
+
+      <section class="plan" id="planPanel" hidden>
+        <div class="plan-head">
+          <h2>待执行计划</h2>
+          <button id="dismissPlanBtn" title="关闭">×</button>
+        </div>
+        <pre id="planText"></pre>
+        <div class="actions">
+          <button id="previewBtn">预览</button>
+          <button id="applyBtn" class="primary">执行并校验</button>
+        </div>
+      </section>
+
+      <footer class="composer">
+        <input id="messageInput" placeholder="例如：把 R4 改成 2K" />
+        <button id="sendBtn">发送</button>
+      </footer>
+    </aside>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
