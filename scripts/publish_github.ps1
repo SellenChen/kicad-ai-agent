@@ -17,8 +17,8 @@ try {
         C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\package_beta.ps1")
     }
 
-    $remote = git -c safe.directory="$SafeRoot" remote get-url origin 2>$null
-    if (-not $remote) {
+    $remotes = git -c safe.directory="$SafeRoot" remote
+    if ($remotes -notcontains "origin") {
         gh repo view "$Owner/$RepoName" 1>$null 2>$null
         if ($LASTEXITCODE -ne 0) {
             gh repo create "$Owner/$RepoName" --$Visibility --description "Windows KiCad AI Agent Beta with local side panel and CLI validation"
