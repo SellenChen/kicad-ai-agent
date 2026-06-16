@@ -22,10 +22,7 @@ try {
 
     $remotes = git -c safe.directory="$SafeRoot" remote
     if ($remotes -notcontains "origin") {
-        gh repo view "$Owner/$RepoName" 1>$null 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            gh repo create "$Owner/$RepoName" --$Visibility --description "Windows KiCad AI Agent Beta with local side panel and CLI validation"
-        }
+        gh repo create "$Owner/$RepoName" --$Visibility --description "Windows KiCad AI Agent Beta with local side panel and CLI validation"
         git -c safe.directory="$SafeRoot" remote add origin "https://github.com/$Owner/$RepoName.git"
         git -c safe.directory="$SafeRoot" push -u origin main
     } else {
