@@ -1,6 +1,6 @@
 # 开发指南
 
-本文面向后续开发维护者，说明本地运行、模块分工、自测和发布方式。当前版本：`0.2.1`。
+本文面向后续开发维护者，说明本地运行、模块分工、自测和发布方式。当前版本：`0.2.2`。
 
 ## 1. 本地运行
 
@@ -141,5 +141,5 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_beta.ps1
 输出：
 
 ```text
-dist\kicad-ai-agent-beta-v0.2.1-beta.1.zip
+dist\kicad-ai-agent-beta-v0.2.2-beta.1.zip
 ```

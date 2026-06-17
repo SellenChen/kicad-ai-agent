@@ -1,36 +1,29 @@
-# v0.2.1-beta.1
+# v0.2.2-beta.1
 
-KiCad AI Agent Beta 0.2.1 聚焦 DeepSeek/API 驱动的真实原理图工作能力，并补齐空工程生成、工程自动识别和一键安装体验。
+KiCad AI Agent Beta 0.2.2 修复 PCB Editor 插件启动时可能进入旧工程的问题，并进一步加固工程路径识别。
 
-## 新增能力
+## 关键修复
 
-- **从空工程生成简单电路**：当工程只有 `.kicad_pro` 或原理图为空时，自动创建 `.kicad_sch` 并写入元件、连线、标签和说明文本。
-- **简单电路生成器**：支持 1 kHz 方波转三角波 RC 滤波、积分电路、微分电路等基础模块。
-- **可执行生成计划**：新增 `schematic.generate_circuit` 工具计划，执行前创建快照，执行后运行 ERC + netlist 校验。
-- **工程自动识别增强**：桌面启动器会读取 KiCad Schematic Editor 最近文件记录，尽量自动匹配当前原理图所属工程。
-- **DeepSeek Provider 拆分**：保留 OpenAI-compatible 基类，DeepSeek 独立 provider，便于后续扩展新的模型接口。
-- **GUI/CLI 安装体验改进**：增加 `scripts/install_plugin_gui.cmd` 双击入口，安装器自动检测 KiCad 版本和插件目录，并创建桌面快捷方式。
+- **修复错误复用旧 Agent 服务**：插件不再只检查 `api/health`。现在必须同时确认 `/api/project` 返回的工程路径与当前 KiCad 工程一致，才会复用已有服务。
+- **自动换端口启动新工程实例**：如果 `8765` 上已有旧工程服务，插件会自动尝试 `8766` 起的可用端口，避免打开旧项目。
+- **增强 KiCad 工程推断**：插件会从 `pcbnew.GetBoard().GetFileName()`、KiCad project 对象、当前工作目录、KiCad 最近文件记录等多来源推断当前工程。
+- **路径归一化**：当识别到 `.kicad_pcb` 或 `.kicad_sch` 时，优先映射到同名 `.kicad_pro`。
+- **启动日志继续写入**：每次启动仍会更新 `work/stage2_runtime/last_project.txt` 和 `logs/kicad_plugin_launch.log`，便于排查。
 
-## 改进
+## 继承自 0.2.1 的能力
 
-- 系统提示词明确告知模型可用本地工具：`schematic.set_property`、`schematic.add_parts`、`schematic.generate_circuit`。
-- 侧边栏执行逻辑支持生成电路计划的直接应用。
-- mock 模式保持最基础能力，后续重点转向真实 API 工作流。
-- 自测脚本加入从空工程生成电路的验证，检查 symbol、wire、label 和 netlist 状态。
+- 从空工程自动创建最小 `.kicad_sch`。
+- 支持 1 kHz 方波转三角波 RC 滤波、基础积分电路、基础微分电路模板。
+- `schematic.generate_circuit` 可执行工具会写入元件、连线、标签、junction 和说明文本。
+- 写入后自动运行 ERC + netlist 校验。
+- DeepSeek Provider 独立化，mock 模式保持基础演示。
 
 ## 验证结果
 
-已在 Windows + KiCad 10.0.x 环境完成自测：
-
-- 服务启动成功。
-- 样例工程摘要成功。
-- `R4: 1K -> 2K` 保格式 patch 成功。
-- `R900 / 10K / Device:R` 新增元件成功。
-- 空工程生成 1 kHz 方波转三角波 RC 滤波电路成功。
-- 生成后 netlist 导出成功。
-- ERC 报告生成和解释接口成功。
-- 符号/封装库搜索成功。
+- Python 编译检查通过。
 - PowerShell 启动脚本语法检查通过。
+- 插件 launcher 编译检查通过。
+- `self_test.py` 通过，包括空工程生成电路和 netlist 校验。
 
 ## 当前限制
 

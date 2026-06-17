@@ -2,7 +2,7 @@
 
 Windows 平台 KiCad AI Agent Beta。它提供类似 Copilot 的深色侧边栏，让用户通过自然语言辅助 KiCad 工程管理、原理图读取、元件参数修改、简单电路自动生成、ERC 解释、netlist/SPICE 导出和模型 API 调用。
 
-> 当前版本 `0.2.1`。本版本重点验证「DeepSeek API + 可执行原理图计划 + 空工程自动建图 + 元件摆放/连线 + KiCad CLI 校验」链路。
+> 当前版本 `0.2.2`。本版本重点修复 PCB Editor 插件启动时错误复用旧工程服务的问题，并继续保留「DeepSeek API + 可执行原理图计划 + 空工程自动建图 + 元件摆放/连线 + KiCad CLI 校验」链路。
 
 ## 功能
 
@@ -10,6 +10,7 @@ Windows 平台 KiCad AI Agent Beta。它提供类似 Copilot 的深色侧边栏�
 - **KiCad PCB Editor 插件启动器**：在 PCB Editor 的工具菜单中一键启动。
 - **桌面快捷方式启动器**：补充 Schematic Editor 暂无原生 Python ActionPlugin 菜单入口的限制。
 - **工程自动识别**：优先使用启动参数，其次读取 KiCad Schematic Editor 最近文件记录，再回退到最近一次工程。
+- **工程一致性校验**：插件启动时会确认已有服务的 `/api/project` 是否等于当前 KiCad 工程，不一致时自动换端口启动新实例。
 - **工程和原理图摘要**：统计符号、连线、标签和 KiCad schematic version。
 - **原理图特征抽取**：随对话上传紧凑工程上下文，包括元件族分布、有源器件、电源符号等。
 - **DeepSeek API 接入**：侧边栏直接配置 API Key 和模型，当前提供 DeepSeek V4 Pro / V4 Flash。
@@ -125,7 +126,7 @@ work/                     运行时数据（快照/报告/设置）
 
 ## 当前限制
 
-- 0.2.1 的自动生成能力主要覆盖简单模拟/RC 电路模板；复杂电路仍需要模型规划和人工审查。
+- 0.2.2 的自动生成能力主要覆盖简单模拟/RC 电路模板；复杂电路仍需要模型规划和人工审查。
 - 侧边栏是 Edge App Mode 独立窗口，不是 KiCad 原生 dock panel。
 - API Key 当前存储为本地明文 JSON，后续应迁移到 Windows Credential Manager。
 - 暂未支持流式输出、自动 BOM、PCB 布局修改和复杂 SPICE 仿真自动闭环。

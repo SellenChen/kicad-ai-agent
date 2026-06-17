@@ -81,7 +81,7 @@ Beta 使用 KiCad 官方 demo 作为样例，样例本身会产生一些 ERC 提
 - 如果未配置 API Key，确认使用 mock 模式（会返回预设回复）
 - 查看 `http://127.0.0.1:8765/api/health` 确认服务运行正常
 
-## Q14：0.2.1 能自动生成并连线原理图吗？
+## Q14：0.2.2 能自动生成并连线原理图吗？
 
 可以，但范围限定在内置简单电路模板。`schematic.generate_circuit` 当前支持 1 kHz 方波转三角波 RC 滤波、基础积分电路、基础微分电路，会自动写入元件、连线、网络标签、junction 和说明文本，并在执行后运行 ERC + netlist 校验。
 
@@ -89,4 +89,8 @@ Beta 使用 KiCad 官方 demo 作为样例，样例本身会产生一些 ERC 提
 
 ## Q15：从原理图编辑器工具菜单中找不到插件怎么办？
 
-KiCad 10 的 Python ActionPlugin 主要挂载在 PCB Editor。Schematic Editor 工作流请使用桌面快捷方式 `KiCad AI Agent.lnk`。0.2.1 的启动脚本会读取 KiCad 最近打开的原理图记录，尽量自动绑定当前工程。
+KiCad 10 的 Python ActionPlugin 主要挂载在 PCB Editor。Schematic Editor 工作流请使用桌面快捷方式 `KiCad AI Agent.lnk`。0.2.2 的启动脚本会读取 KiCad 最近打开的原理图记录，尽量自动绑定当前工程。
+
+## Q16：为什么插件打开后进入了旧工程？
+
+0.2.2 已修复这个问题。旧版本只检查 `http://127.0.0.1:8765/api/health`，如果旧 Agent 服务仍在运行，就可能复用旧工程。新版会继续检查 `/api/project`，只有工程路径一致才复用；如果不一致，会自动换端口启动当前工程的新 Agent 实例。

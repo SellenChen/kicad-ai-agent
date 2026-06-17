@@ -2,7 +2,7 @@
 
 生成日期：2026-06-17  
 适用项目：Windows 平台 KiCad AI Agent Beta  
-当前本地版本：`0.2.1`
+当前本地版本：`0.2.2`
 当前开发机用户：`Sellen`
 
 ---
@@ -1355,7 +1355,7 @@ KiCad 工程 -> Agent 读取上下文 -> 模型理解 -> 可执行计划 -> 用�
 
 ---
 
-## 18. v0.2.1 维护补充
+## 18. v0.2.2 维护补充
 
 ### 18.1 新增能力
 
@@ -1411,7 +1411,45 @@ generate_from_empty.netlist_ok = true
 ### 18.4 版本和发布
 
 ```text
-Python package version: 0.2.1
-GitHub release tag: v0.2.1-beta.1
-Release asset: dist\kicad-ai-agent-beta-v0.2.1-beta.1.zip
+Python package version: 0.2.2
+GitHub release tag: v0.2.2-beta.1
+Release asset: dist\kicad-ai-agent-beta-v0.2.2-beta.1.zip
 ```
+
+---
+
+## 19. v0.2.2 工程识别 Bugfix
+
+### 19.1 问题
+
+用户从新 KiCad 工程的 PCB Editor 工具菜单启动 Agent 时，侧边栏仍可能进入旧工程，例如 `work\stage0_cli\pic_programmer\pic_programmer.kicad_sch`。
+
+根因是旧版插件只检查 `http://127.0.0.1:8765/api/health`。只要旧服务仍然存活，插件就直接打开旧服务 URL，而不会确认该服务绑定的工程是否等于当前 KiCad 工程。
+
+### 19.2 修复
+
+`app/kicad_plugin/kicad_ai_agent_launcher/launcher.py` 新增：
+
+```text
+_service_for_project(url, project)
+_choose_port(start_port, project)
+_project_candidates_from_kicad()
+_normalize_project(path)
+_recent_kicad_project()
+```
+
+启动逻辑变为：
+
+1. 先从 KiCad API、当前工作目录、最近文件记录推断当前工程。
+2. 检查候选端口服务是否健康。
+3. 继续请求 `/api/project`。
+4. 只有服务工程路径与当前工程完全一致才复用。
+5. 如果 `8765` 是旧工程，自动尝试 `8766` 起的空闲端口并启动新服务。
+
+### 19.3 验证建议
+
+1. 先打开旧工程并启动 Agent。
+2. 不关闭旧 Agent 服务，打开另一个 KiCad 工程。
+3. 从 PCB Editor 工具菜单启动插件。
+4. 新侧边栏顶部路径应显示新工程的 `.kicad_sch` 或 `.kicad_pro` 对应文件。
+5. 如果旧服务占用 `8765`，新窗口 URL 应自动变为 `8766` 或后续端口。

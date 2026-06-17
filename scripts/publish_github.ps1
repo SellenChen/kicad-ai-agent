@@ -6,10 +6,10 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 $RepoName = "kicad-ai-agent"
 $Owner = "SellenChen"
 $Visibility = "public"
-$Tag = "v0.2.1-beta.1"
+$Tag = "v0.2.2-beta.1"
 $Root = Split-Path -Parent $PSScriptRoot
 $SafeRoot = ([System.IO.Path]::GetFullPath($Root)) -replace '\\','/'
-$Zip = Join-Path $Root "dist\kicad-ai-agent-beta-v0.2.1-beta.1.zip"
+$Zip = Join-Path $Root "dist\kicad-ai-agent-beta-v0.2.2-beta.1.zip"
 $Notes = Join-Path $Root "RELEASE_NOTES_zh-CN.md"
 
 Push-Location $Root

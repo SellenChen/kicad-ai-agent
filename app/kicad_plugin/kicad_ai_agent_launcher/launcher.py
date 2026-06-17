@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
+import json
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -30,7 +32,7 @@ class KiCadAIAgentLauncher(pcbnew.ActionPlugin):
 
     def Run(self):
         project = self._project_path()
-        port = os.environ.get("KICAD_AI_AGENT_PORT", DEFAULT_PORT)
+        port = self._choose_port(int(os.environ.get("KICAD_AI_AGENT_PORT", DEFAULT_PORT)), project)
         url = f"http://127.0.0.1:{port}"
         command = [
             self._python_executable(),
@@ -40,7 +42,7 @@ class KiCadAIAgentLauncher(pcbnew.ActionPlugin):
             "--host",
             "127.0.0.1",
             "--port",
-            port,
+            str(port),
         ]
 
         if os.environ.get("KICAD_AI_AGENT_DRY_RUN") == "1":
@@ -51,7 +53,7 @@ class KiCadAIAgentLauncher(pcbnew.ActionPlugin):
 
         process = None
         self._write_launch_log(command, project, url)
-        if not self._service_healthy(url):
+        if not self._service_for_project(url, project):
             process = subprocess.Popen(
                 command,
                 cwd=str(APP_ROOT),
@@ -69,16 +71,108 @@ class KiCadAIAgentLauncher(pcbnew.ActionPlugin):
     def _project_path(self) -> Path:
         override = os.environ.get("KICAD_AI_AGENT_PROJECT")
         if override:
-            return Path(override)
+            return self._normalize_project(Path(override))
 
-        board = pcbnew.GetBoard()
-        if board:
-            board_path = Path(board.GetFileName())
-            if board_path.exists():
-                project_path = board_path.with_suffix(".kicad_pro")
-                return project_path if project_path.exists() else board_path
+        for candidate in self._project_candidates_from_kicad():
+            normalized = self._normalize_project(candidate)
+            if normalized.exists():
+                return normalized
+
+        recent = self._recent_kicad_project()
+        if recent:
+            return recent
 
         return REPO_ROOT
+
+    def _project_candidates_from_kicad(self) -> list[Path]:
+        candidates: list[Path] = []
+        board = pcbnew.GetBoard()
+        if board:
+            for method_name in ("GetFileName", "GetProject"):
+                method = getattr(board, method_name, None)
+                if not method:
+                    continue
+                try:
+                    value = method()
+                except Exception:
+                    continue
+                candidates.extend(self._paths_from_value(value))
+
+        for name in ("GetCurrentProject", "GetProject"):
+            func = getattr(pcbnew, name, None)
+            if not func:
+                continue
+            try:
+                project = func()
+            except Exception:
+                continue
+            candidates.extend(self._paths_from_value(project))
+
+        candidates.extend([Path.cwd(), Path(os.getcwd())])
+        return candidates
+
+    def _paths_from_value(self, value) -> list[Path]:
+        paths: list[Path] = []
+        if value is None:
+            return paths
+        if isinstance(value, (str, os.PathLike)):
+            text = str(value)
+            if text:
+                paths.append(Path(text))
+            return paths
+        for method_name in ("GetProjectFullName", "GetProjectPath", "GetFileName", "GetPath"):
+            method = getattr(value, method_name, None)
+            if not method:
+                continue
+            try:
+                text = str(method())
+            except Exception:
+                continue
+            if text:
+                paths.append(Path(text))
+        return paths
+
+    def _normalize_project(self, path: Path) -> Path:
+        path = path.expanduser()
+        if path.is_file():
+            if path.suffix.lower() in {".kicad_pcb", ".kicad_sch"}:
+                project = path.with_suffix(".kicad_pro")
+                return project if project.exists() else path
+            return path
+        if path.is_dir():
+            projects = sorted(path.glob("*.kicad_pro"))
+            if projects:
+                same_name = path / f"{path.name}.kicad_pro"
+                return same_name if same_name.exists() else projects[0]
+            boards = sorted(path.glob("*.kicad_pcb"))
+            if boards:
+                return boards[0]
+            schematics = sorted(path.glob("*.kicad_sch"))
+            if schematics:
+                return schematics[0]
+        return path
+
+    def _recent_kicad_project(self) -> Path | None:
+        config_root = Path(os.environ.get("APPDATA", "")) / "kicad"
+        if not config_root.exists():
+            return None
+        settings_files = sorted(
+            list(config_root.rglob("eeschema.json")) + list(config_root.rglob("pcbnew.json")),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        pattern = re.compile(r"[A-Za-z]:\\\\(?:[^\"\\\\]|\\\\.)+?\\.kicad_(?:pro|sch|pcb)")
+        for settings_file in settings_files:
+            try:
+                raw = settings_file.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for match in pattern.finditer(raw):
+                candidate = Path(match.group(0).replace("\\\\", "\\"))
+                normalized = self._normalize_project(candidate)
+                if normalized.exists():
+                    return normalized
+        return None
 
     def _python_executable(self) -> str:
         override = os.environ.get("KICAD_AI_AGENT_PYTHON")
@@ -138,6 +232,26 @@ class KiCadAIAgentLauncher(pcbnew.ActionPlugin):
                 return response.status == 200
         except Exception:
             return False
+
+    def _service_for_project(self, url: str, project: Path) -> bool:
+        if not self._service_healthy(url):
+            return False
+        try:
+            with urllib.request.urlopen(f"{url}/api/project", timeout=0.5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            running_project = Path(str(payload.get("project", ""))).resolve()
+            return running_project == project.resolve()
+        except Exception:
+            return False
+
+    def _choose_port(self, start_port: int, project: Path) -> int:
+        for candidate in range(start_port, start_port + 20):
+            url = f"http://127.0.0.1:{candidate}"
+            if self._service_for_project(url, project):
+                return candidate
+            if not self._service_healthy(url):
+                return candidate
+        raise RuntimeError("No available KiCad AI Agent port found for the current project.")
 
     def _wait_until_ready(self, url: str) -> None:
         last_error = None
