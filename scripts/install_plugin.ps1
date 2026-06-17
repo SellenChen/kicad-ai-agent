@@ -12,9 +12,9 @@ if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
 function Find-KiCadPluginsDir {
     $appdataKicad = Join-Path $env:APPDATA "kicad"
     if (Test-Path -LiteralPath $appdataKicad) {
-        $candidates = Get-ChildItem -LiteralPath $appdataKicad -Directory |
+        $candidates = @(Get-ChildItem -LiteralPath $appdataKicad -Directory |
             Where-Object { Test-Path (Join-Path $_.FullName "scripting\plugins") } |
-            Sort-Object Name -Descending
+            Sort-Object Name -Descending)
         foreach ($candidate in $candidates) {
             $kicadExe = "C:\Program Files\KiCad\$($candidate.Name)\bin\kicad.exe"
             if (Test-Path -LiteralPath $kicadExe) {
@@ -40,6 +40,34 @@ function Find-KiCadPluginsDir {
     }
 }
 
+function Get-KiCadPythonPath {
+    param([string]$KiCadPath)
+
+    $candidate = Join-Path $KiCadPath "bin\python.exe"
+    if (Test-Path -LiteralPath $candidate) {
+        return $candidate
+    }
+    return "C:\Program Files\KiCad\10.0\bin\python.exe"
+}
+
+function Write-PluginConfig {
+    param(
+        [string]$TargetPluginDir,
+        [string]$RepoRoot,
+        [string]$KiCadPath
+    )
+
+    $config = @"
+from pathlib import Path
+
+
+REPO_ROOT = Path(r"$RepoRoot")
+APP_ROOT = REPO_ROOT / "app"
+KICAD_PYTHON = Path(r"$(Get-KiCadPythonPath -KiCadPath $KiCadPath)")
+"@
+    Set-Content -LiteralPath (Join-Path $TargetPluginDir "config.py") -Value $config -Encoding UTF8
+}
+
 $detected = Find-KiCadPluginsDir
 $TargetPluginsDir = $detected.PluginsDir
 $KiCadPath = $detected.KiCadPath
@@ -54,6 +82,7 @@ if (Test-Path -LiteralPath $Target) {
 
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
 Copy-Item -Path (Join-Path $Source "*") -Destination $Target -Recurse -Force
+Write-PluginConfig -TargetPluginDir $Target -RepoRoot $Root -KiCadPath $KiCadPath
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($DesktopShortcut)

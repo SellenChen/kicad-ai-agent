@@ -58,7 +58,7 @@ Beta 使用 KiCad 官方 demo 作为样例，样例本身会产生一些 ERC 提
 
 ## Q10：安装插件的 GUI 在哪？
 
-双击 `scripts\install_plugin_gui.ps1` 启动。安装器会自动检测本机 KiCad 版本和插件目录，未检测到时可以手动选择。CLI 版可用 `powershell -ExecutionPolicy Bypass -File .\scripts\install_plugin.ps1`。
+双击 `scripts\install_plugin_gui.cmd` 启动。安装器会自动检测本机 KiCad 版本和插件目录，未检测到时可以手动选择。CLI 版可用 `powershell -ExecutionPolicy Bypass -File .\scripts\install_plugin.ps1`。
 
 ## Q11：桌面快捷方式不工作？
 
@@ -80,3 +80,13 @@ Beta 使用 KiCad 官方 demo 作为样例，样例本身会产生一些 ERC 提
 - 如果配置了 API Key，检查网络连接和 API Key 有效性
 - 如果未配置 API Key，确认使用 mock 模式（会返回预设回复）
 - 查看 `http://127.0.0.1:8765/api/health` 确认服务运行正常
+
+## Q14：0.2.1 能自动生成并连线原理图吗？
+
+可以，但范围限定在内置简单电路模板。`schematic.generate_circuit` 当前支持 1 kHz 方波转三角波 RC 滤波、基础积分电路、基础微分电路，会自动写入元件、连线、网络标签、junction 和说明文本，并在执行后运行 ERC + netlist 校验。
+
+普通新增元件工具 `schematic.add_parts` 仍只负责追加 symbol 实例，不自动连线。
+
+## Q15：从原理图编辑器工具菜单中找不到插件怎么办？
+
+KiCad 10 的 Python ActionPlugin 主要挂载在 PCB Editor。Schematic Editor 工作流请使用桌面快捷方式 `KiCad AI Agent.lnk`。0.2.1 的启动脚本会读取 KiCad 最近打开的原理图记录，尽量自动绑定当前工程。

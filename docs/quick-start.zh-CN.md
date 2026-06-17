@@ -23,7 +23,7 @@ Windows
 双击运行，无需命令行：
 
 ```powershell
-.\scripts\install_plugin_gui.ps1
+.\scripts\install_plugin_gui.cmd
 ```
 
 安装器自动检测 KiCad 版本，一站式安装插件 + 桌面快捷方式。
@@ -91,3 +91,13 @@ python .\app\scripts\self_test.py
 - ERC 解释
 - 符号/封装库搜索
 - 环境诊断
+
+## 7. 从空工程生成简单电路
+
+在空工程或已有工程中输入：
+
+```text
+请生成一个1kHz方波转三角波的滤波电路
+```
+
+Agent 会生成可执行计划。点击“执行并校验”后，会自动放置元件、连线、标签，并运行 ERC + netlist 校验。

@@ -2,7 +2,7 @@
 
 生成日期：2026-06-17  
 适用项目：Windows 平台 KiCad AI Agent Beta  
-当前本地版本：`0.2.0b1`  
+当前本地版本：`0.2.1`
 当前开发机用户：`Sellen`
 
 ---
@@ -1352,3 +1352,66 @@ KiCad 工程 -> Agent 读取上下文 -> 模型理解 -> 可执行计划 -> 用�
 - 让每次写入都可预览、可回滚、可验证。
 
 只要保持“先计划、再确认、再快照、再执行、再校验”的开发纪律，这个项目可以稳步从 Beta 侧边栏演进成真正的 KiCad Copilot-like Agent。
+
+---
+
+## 18. v0.2.1 维护补充
+
+### 18.1 新增能力
+
+- 新增 `schematic.generate_circuit` 可执行工具。
+- 支持空工程自动创建最小 `.kicad_sch`。
+- 支持 1 kHz 方波转三角波 RC 滤波、基础积分电路、基础微分电路模板。
+- 生成工具会写入 symbol、wire、label、junction、text，并在写入后执行 ERC + netlist 校验。
+- 桌面启动器会读取 KiCad Schematic Editor 最近文件记录，尽量自动绑定当前工程。
+- `DeepSeekProvider` 从通用 OpenAI-compatible provider 中独立出来，便于后续新增模型接口。
+
+### 18.2 关键代码入口
+
+```text
+app/kicad_ai_agent/schematic.py
+  ensure_schematic()
+  create_empty_schematic()
+  plan_circuit_from_prompt()
+  generate_circuit_preserving_format()
+  _recipe_square_to_triangle()
+  _recipe_integrator()
+  _recipe_differentiator()
+
+app/kicad_ai_agent/server.py
+  /api/chat
+  /api/tools/generate-circuit/apply
+  _execute_plan()
+
+app/static/app.js
+  applyPlan()
+
+scripts/Start-KiCadAIAgent.ps1
+  Get-AgentProject()
+  Get-RecentSchematicProject()
+```
+
+### 18.3 验证方式
+
+```powershell
+python -m py_compile app\kicad_ai_agent\schematic.py app\kicad_ai_agent\server.py app\kicad_ai_agent\provider.py app\scripts\self_test.py
+python .\app\scripts\self_test.py
+```
+
+`self_test.py` 会创建临时空工程并验证 `schematic.generate_circuit`：
+
+```text
+generate_from_empty.tool = schematic.generate_circuit
+generate_from_empty.components = 3
+generate_from_empty.wires = 5
+generate_from_empty.labels = 2
+generate_from_empty.netlist_ok = true
+```
+
+### 18.4 版本和发布
+
+```text
+Python package version: 0.2.1
+GitHub release tag: v0.2.1-beta.1
+Release asset: dist\kicad-ai-agent-beta-v0.2.1-beta.1.zip
+```

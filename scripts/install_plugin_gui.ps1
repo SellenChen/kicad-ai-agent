@@ -1,16 +1,27 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 $ErrorActionPreference = "Stop"
+
+if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne "STA") {
+    $powershell = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    Start-Process -FilePath $powershell -ArgumentList @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-STA",
+        "-File",
+        "`"$PSCommandPath`""
+    )
+    exit
+}
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $PSCommandPath
 $RepoRoot = Split-Path -Parent $ScriptDir
 $PluginSource = Join-Path $RepoRoot "app\kicad_plugin\kicad_ai_agent_launcher"
 $LauncherScript = Join-Path $RepoRoot "scripts\Start-KiCadAIAgent.ps1"
-
-$script:Installations = @()
-$script:DetectedTarget = ""
-$script:DetectedKicadPath = ""
 
 function Find-KiCadInstallations {
     $results = @()
@@ -18,68 +29,101 @@ function Find-KiCadInstallations {
     if (Test-Path -LiteralPath $appdataKicad) {
         foreach ($versionDir in Get-ChildItem -LiteralPath $appdataKicad -Directory | Sort-Object Name -Descending) {
             $pluginsDir = Join-Path $versionDir.FullName "scripting\plugins"
-            if (Test-Path -LiteralPath $pluginsDir) {
-                $kicadInstall = "C:\Program Files\KiCad\$($versionDir.Name)"
-                $kicadExe = Join-Path $kicadInstall "bin\kicad.exe"
-                $validKicad = Test-Path -LiteralPath $kicadExe
-                $displayText = if ($validKicad) {
-                    "KiCad $($versionDir.Name) [Verified] -- $pluginsDir"
-                } else {
-                    "KiCad $($versionDir.Name) [No binary] -- $pluginsDir"
-                }
-                $results += [PSCustomObject]@{
-                    Version      = $versionDir.Name
-                    PluginsPath  = $pluginsDir
-                    InstallPath  = if ($validKicad) { $kicadInstall } else { "" }
-                    Valid        = $validKicad
-                    DisplayText  = $displayText
-                }
+            $installDir = "C:\Program Files\KiCad\$($versionDir.Name)"
+            $kicadExe = Join-Path $installDir "bin\kicad.exe"
+            $valid = Test-Path -LiteralPath $kicadExe
+            $results += [PSCustomObject]@{
+                Version = $versionDir.Name
+                PluginsPath = $pluginsDir
+                InstallPath = if ($valid) { $installDir } else { "" }
+                Valid = $valid
+                DisplayText = "KiCad $($versionDir.Name) " + $(if ($valid) { "[Verified]" } else { "[Config only]" }) + " -- $pluginsDir"
             }
         }
     }
-    if ($results.Count -eq 0) {
-        $pfList = @()
-        if ($env:ProgramFiles) { $pfList += $env:ProgramFiles }
-        if (${env:ProgramFiles(x86)} -and ${env:ProgramFiles(x86)} -ne $env:ProgramFiles) {
-            $pfList += ${env:ProgramFiles(x86)}
-        }
-        foreach ($pf in $pfList) {
-            $kicadDir = Join-Path $pf "KiCad"
-            if (Test-Path -LiteralPath $kicadDir) {
-                foreach ($versionDir in Get-ChildItem -LiteralPath $kicadDir -Directory | Sort-Object Name -Descending) {
-                    $kicadExe = Join-Path $versionDir.FullName "bin\kicad.exe"
-                    if (Test-Path -LiteralPath $kicadExe) {
-                        $pluginsDir = Join-Path $env:APPDATA "kicad\$($versionDir.Name)\scripting\plugins"
-                        $displayText = "KiCad $($versionDir.Name) [Detected] -- $pluginsDir (auto-create)"
-                        $results += [PSCustomObject]@{
-                            Version      = $versionDir.Name
-                            PluginsPath  = $pluginsDir
-                            InstallPath  = $versionDir.FullName
-                            Valid        = $true
-                            DisplayText  = $displayText
-                        }
-                    }
-                }
+
+    $programFilesRoots = @()
+    if ($env:ProgramFiles) { $programFilesRoots += $env:ProgramFiles }
+    if (${env:ProgramFiles(x86)} -and ${env:ProgramFiles(x86)} -ne $env:ProgramFiles) {
+        $programFilesRoots += ${env:ProgramFiles(x86)}
+    }
+    foreach ($pf in $programFilesRoots) {
+        $kicadRoot = Join-Path $pf "KiCad"
+        if (-not (Test-Path -LiteralPath $kicadRoot)) { continue }
+        foreach ($versionDir in Get-ChildItem -LiteralPath $kicadRoot -Directory | Sort-Object Name -Descending) {
+            $kicadExe = Join-Path $versionDir.FullName "bin\kicad.exe"
+            if (-not (Test-Path -LiteralPath $kicadExe)) { continue }
+            $pluginsDir = Join-Path $env:APPDATA "kicad\$($versionDir.Name)\scripting\plugins"
+            if ($results | Where-Object { $_.PluginsPath -eq $pluginsDir }) { continue }
+            $results += [PSCustomObject]@{
+                Version = $versionDir.Name
+                PluginsPath = $pluginsDir
+                InstallPath = $versionDir.FullName
+                Valid = $true
+                DisplayText = "KiCad $($versionDir.Name) [Detected] -- $pluginsDir"
             }
         }
     }
-    return $results
+    return @($results | Sort-Object Version -Descending)
+}
+
+function Get-KiCadPythonPath {
+    param([string]$KiCadInstallPath)
+
+    if ($KiCadInstallPath) {
+        $candidate = Join-Path $KiCadInstallPath "bin\python.exe"
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+    return "C:\Program Files\KiCad\10.0\bin\python.exe"
+}
+
+function Write-PluginConfig {
+    param(
+        [string]$TargetPluginDir,
+        [string]$RepoRoot,
+        [string]$KiCadInstallPath
+    )
+
+    $pythonPath = Get-KiCadPythonPath -KiCadInstallPath $KiCadInstallPath
+    $config = @"
+from pathlib import Path
+
+
+REPO_ROOT = Path(r"$RepoRoot")
+APP_ROOT = REPO_ROOT / "app"
+KICAD_PYTHON = Path(r"$pythonPath")
+"@
+    Set-Content -LiteralPath (Join-Path $TargetPluginDir "config.py") -Value $config -Encoding UTF8
 }
 
 function Install-Plugin {
     param(
         [string]$TargetPluginsDir,
-        [string]$KiCadInstallPath
+        [string]$KiCadInstallPath,
+        [bool]$CreateShortcut
     )
-    try {
-        $null = New-Item -ItemType Directory -Force -Path $TargetPluginsDir
-        $targetPluginDir = Join-Path $TargetPluginsDir "kicad_ai_agent_launcher"
-        if (Test-Path -LiteralPath $targetPluginDir) {
-            Remove-Item -LiteralPath $targetPluginDir -Recurse -Force
-        }
-        Copy-Item -Path (Join-Path $PluginSource "*") -Destination $targetPluginDir -Recurse -Force
-        $desktop = [Environment]::GetFolderPath("Desktop")
-        $shortcutPath = Join-Path $desktop "KiCad AI Agent.lnk"
+
+    if (-not (Test-Path -LiteralPath $PluginSource -PathType Container)) {
+        throw "Plugin source directory not found: $PluginSource"
+    }
+    if (-not (Test-Path -LiteralPath $LauncherScript -PathType Leaf)) {
+        throw "Launcher script not found: $LauncherScript"
+    }
+
+    New-Item -ItemType Directory -Force -Path $TargetPluginsDir | Out-Null
+    $targetPluginDir = Join-Path $TargetPluginsDir "kicad_ai_agent_launcher"
+    if (Test-Path -LiteralPath $targetPluginDir) {
+        Remove-Item -LiteralPath $targetPluginDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $targetPluginDir | Out-Null
+    Copy-Item -Path (Join-Path $PluginSource "*") -Destination $targetPluginDir -Recurse -Force
+    Write-PluginConfig -TargetPluginDir $targetPluginDir -RepoRoot $RepoRoot -KiCadInstallPath $KiCadInstallPath
+
+    $shortcutPath = ""
+    if ($CreateShortcut) {
+        $shortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "KiCad AI Agent.lnk"
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -91,203 +135,138 @@ function Install-Plugin {
         }
         $shortcut.Description = "Launch KiCad AI Agent for the last KiCad project or select a project."
         $shortcut.Save()
-        return @{ Ok = $true; Target = $targetPluginDir; Shortcut = $shortcutPath }
     }
-    catch {
-        return @{ Ok = $false; Error = $_.Exception.Message }
+
+    return [PSCustomObject]@{
+        Target = $targetPluginDir
+        Shortcut = $shortcutPath
+        Config = Join-Path $targetPluginDir "config.py"
     }
 }
 
 function Show-InstallerGUI {
-    $script:Installations = Find-KiCadInstallations
+    $installations = Find-KiCadInstallations
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "KiCad AI Agent Plugin Installer"
-    $form.Size = New-Object System.Drawing.Size(550, 520)
+    $form.Size = New-Object System.Drawing.Size(600, 500)
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $form.MaximizeBox = $false
     $form.BackColor = [System.Drawing.Color]::FromArgb(0x15, 0x19, 0x22)
     $form.ForeColor = [System.Drawing.Color]::FromArgb(0xe7, 0xea, 0xf0)
-    $form.Font = New-Object System.Drawing.Font("Microsoft YaHei", 9)
+    $form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 
-    # Title
-    $headerLabel = New-Object System.Windows.Forms.Label
-    $headerLabel.Text = "KiCad AI Agent - Install Plugin"
-    $headerLabel.Font = New-Object System.Drawing.Font("Microsoft YaHei", 14, [System.Drawing.FontStyle]::Bold)
-    $headerLabel.Size = New-Object System.Drawing.Size(510, 36)
-    $headerLabel.Location = New-Object System.Drawing.Point(18, 14)
-    $headerLabel.ForeColor = [System.Drawing.Color]::FromArgb(0xe7, 0xea, 0xf0)
-    $form.Controls.Add($headerLabel)
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text = "KiCad AI Agent - One Click Plugin Installer"
+    $title.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 13, [System.Drawing.FontStyle]::Bold)
+    $title.Location = New-Object System.Drawing.Point(18, 16)
+    $title.Size = New-Object System.Drawing.Size(550, 30)
+    $form.Controls.Add($title)
 
-    $subtitleLabel = New-Object System.Windows.Forms.Label
-    $subtitleLabel.Text = "Install the plugin into KiCad scripting directory. After install, access via Tools > KiCad AI Agent in PCB Editor."
-    $subtitleLabel.Size = New-Object System.Drawing.Size(510, 32)
-    $subtitleLabel.Location = New-Object System.Drawing.Point(18, 50)
-    $subtitleLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-    $form.Controls.Add($subtitleLabel)
-
-    # Detection status
-    $detectedLabel = New-Object System.Windows.Forms.Label
-    if ($script:Installations.Count -gt 0) {
-        $detectedLabel.Text = "KiCad installations detected. Select target plugins directory:"
-    } else {
-        $detectedLabel.Text = "No KiCad installation auto-detected. Use [Browse...] to manually select your scripting/plugins folder."
-    }
-    $detectedLabel.Size = New-Object System.Drawing.Size(510, 32)
-    $detectedLabel.Location = New-Object System.Drawing.Point(18, 88)
-    $detectedLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-    $form.Controls.Add($detectedLabel)
+    $hint = New-Object System.Windows.Forms.Label
+    $hint.Text = "Select KiCad scripting/plugins directory, then click Install. Restart KiCad PCB Editor after install."
+    $hint.Location = New-Object System.Drawing.Point(18, 52)
+    $hint.Size = New-Object System.Drawing.Size(550, 38)
+    $hint.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
+    $form.Controls.Add($hint)
 
     $listBox = New-Object System.Windows.Forms.ListBox
-    $listBox.Size = New-Object System.Drawing.Size(510, 140)
-    $listBox.Location = New-Object System.Drawing.Point(18, 124)
+    $listBox.Location = New-Object System.Drawing.Point(18, 96)
+    $listBox.Size = New-Object System.Drawing.Size(550, 150)
     $listBox.BackColor = [System.Drawing.Color]::FromArgb(0x1b, 0x20, 0x2b)
     $listBox.ForeColor = [System.Drawing.Color]::FromArgb(0xe7, 0xea, 0xf0)
-    $listBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $listBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+    foreach ($inst in $installations) {
+        [void]$listBox.Items.Add($inst.DisplayText)
+    }
+    if ($listBox.Items.Count -gt 0) { $listBox.SelectedIndex = 0 }
     $form.Controls.Add($listBox)
 
-    foreach ($inst in $script:Installations) {
-        $index = $listBox.Items.Add($inst.DisplayText)
-        if ($inst.Valid) {
-            $listBox.SelectedIndex = $index
-            $script:DetectedTarget = $inst.PluginsPath
-            $script:DetectedKicadPath = $inst.InstallPath
-        }
-    }
-    if ($listBox.SelectedIndex -lt 0 -and $listBox.Items.Count -gt 0) {
-        $listBox.SelectedIndex = 0
-        $script:DetectedTarget = $script:Installations[0].PluginsPath
-        $script:DetectedKicadPath = $script:Installations[0].InstallPath
-    }
-
-    $pathGroup = New-Object System.Windows.Forms.GroupBox
-    $pathGroup.Text = "Target Install Path"
-    $pathGroup.Size = New-Object System.Drawing.Size(510, 50)
-    $pathGroup.Location = New-Object System.Drawing.Point(18, 274)
-    $pathGroup.BackColor = [System.Drawing.Color]::FromArgb(0x15, 0x19, 0x22)
-    $pathGroup.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-    $form.Controls.Add($pathGroup)
-
-    $selectedPathLabel = New-Object System.Windows.Forms.Label
-    $selectedPathLabel.Text = if ($script:DetectedTarget) { $script:DetectedTarget } else { "(not selected)" }
-    $selectedPathLabel.Size = New-Object System.Drawing.Size(490, 22)
-    $selectedPathLabel.Location = New-Object System.Drawing.Point(8, 22)
-    $selectedPathLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x4c, 0xc7, 0xb0)
-    $selectedPathLabel.AutoEllipsis = $true
-    $pathGroup.Controls.Add($selectedPathLabel)
+    $pathBox = New-Object System.Windows.Forms.TextBox
+    $pathBox.Location = New-Object System.Drawing.Point(18, 264)
+    $pathBox.Size = New-Object System.Drawing.Size(420, 25)
+    $pathBox.BackColor = [System.Drawing.Color]::FromArgb(0x1b, 0x20, 0x2b)
+    $pathBox.ForeColor = [System.Drawing.Color]::FromArgb(0x4c, 0xc7, 0xb0)
+    $pathBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    if ($installations.Count -gt 0) { $pathBox.Text = $installations[0].PluginsPath }
+    $form.Controls.Add($pathBox)
 
     $browseButton = New-Object System.Windows.Forms.Button
     $browseButton.Text = "Browse..."
-    $browseButton.Size = New-Object System.Drawing.Size(130, 32)
-    $browseButton.Location = New-Object System.Drawing.Point(18, 336)
-    $browseButton.BackColor = [System.Drawing.Color]::FromArgb(0x1b, 0x20, 0x2b)
-    $browseButton.ForeColor = [System.Drawing.Color]::FromArgb(0xe7, 0xea, 0xf0)
-    $browseButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $browseButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0x2a, 0x31, 0x41)
+    $browseButton.Location = New-Object System.Drawing.Point(450, 260)
+    $browseButton.Size = New-Object System.Drawing.Size(118, 32)
     $form.Controls.Add($browseButton)
 
-    $checkbox = New-Object System.Windows.Forms.CheckBox
-    $checkbox.Text = "Create desktop shortcut (KiCad AI Agent.lnk)"
-    $checkbox.Checked = $true
-    $checkbox.Size = New-Object System.Drawing.Size(330, 24)
-    $checkbox.Location = New-Object System.Drawing.Point(160, 340)
-    $checkbox.BackColor = [System.Drawing.Color]::FromArgb(0x15, 0x19, 0x22)
-    $checkbox.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-    $checkbox.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $form.Controls.Add($checkbox)
+    $shortcutCheck = New-Object System.Windows.Forms.CheckBox
+    $shortcutCheck.Text = "Create desktop shortcut"
+    $shortcutCheck.Checked = $true
+    $shortcutCheck.Location = New-Object System.Drawing.Point(18, 306)
+    $shortcutCheck.Size = New-Object System.Drawing.Size(250, 24)
+    $shortcutCheck.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
+    $shortcutCheck.BackColor = [System.Drawing.Color]::FromArgb(0x15, 0x19, 0x22)
+    $form.Controls.Add($shortcutCheck)
 
     $installButton = New-Object System.Windows.Forms.Button
     $installButton.Text = "Install"
+    $installButton.Location = New-Object System.Drawing.Point(18, 344)
     $installButton.Size = New-Object System.Drawing.Size(130, 38)
-    $installButton.Location = New-Object System.Drawing.Point(18, 380)
     $installButton.BackColor = [System.Drawing.Color]::FromArgb(0x27, 0xa5, 0x8f)
     $installButton.ForeColor = [System.Drawing.Color]::FromArgb(0x04, 0x11, 0x0e)
-    $installButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $installButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0x27, 0xa5, 0x8f)
-    $installButton.Font = New-Object System.Drawing.Font("Microsoft YaHei", 10, [System.Drawing.FontStyle]::Bold)
+    $installButton.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 10, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($installButton)
 
-    $statusLabel = New-Object System.Windows.Forms.Label
-    $statusLabel.Text = "Ready"
-    $statusLabel.Size = New-Object System.Drawing.Size(510, 20)
-    $statusLabel.Location = New-Object System.Drawing.Point(18, 432)
-    $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-    $form.Controls.Add($statusLabel)
+    $status = New-Object System.Windows.Forms.Label
+    $status.Text = "Ready"
+    $status.Location = New-Object System.Drawing.Point(18, 400)
+    $status.Size = New-Object System.Drawing.Size(550, 44)
+    $status.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
+    $form.Controls.Add($status)
 
-    $footerLabel = New-Object System.Windows.Forms.Label
-    $footerLabel.Text = "After install, restart KiCad PCB Editor. Access via Tools > KiCad AI Agent."
-    $footerLabel.Size = New-Object System.Drawing.Size(510, 20)
-    $footerLabel.Location = New-Object System.Drawing.Point(18, 456)
-    $footerLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x6a, 0x74, 0x82)
-    $footerLabel.Font = New-Object System.Drawing.Font("Microsoft YaHei", 8)
-    $form.Controls.Add($footerLabel)
+    $script:selectedInstallPath = if ($installations.Count -gt 0) { $installations[0].InstallPath } else { "" }
 
     $listBox.Add_SelectedIndexChanged({
-        if ($listBox.SelectedIndex -ge 0 -and $listBox.SelectedIndex -lt $script:Installations.Count) {
-            $script:DetectedTarget = $script:Installations[$listBox.SelectedIndex].PluginsPath
-            $script:DetectedKicadPath = $script:Installations[$listBox.SelectedIndex].InstallPath
-            $selectedPathLabel.Text = $script:DetectedTarget
+        if ($listBox.SelectedIndex -ge 0 -and $listBox.SelectedIndex -lt $installations.Count) {
+            $pathBox.Text = $installations[$listBox.SelectedIndex].PluginsPath
+            $script:selectedInstallPath = $installations[$listBox.SelectedIndex].InstallPath
         }
     })
 
     $browseButton.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.Description = "Select KiCad scripting/plugins directory"
-        if ($script:DetectedTarget) {
-            $dialog.SelectedPath = $script:DetectedTarget
-        }
+        if ($pathBox.Text) { $dialog.SelectedPath = $pathBox.Text }
         if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $script:DetectedTarget = $dialog.SelectedPath
-            $script:DetectedKicadPath = ""
-            $selectedPathLabel.Text = $script:DetectedTarget
-            $listBox.ClearSelected()
-            $statusLabel.Text = "Manual path selected."
-            $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
+            $pathBox.Text = $dialog.SelectedPath
+            $script:selectedInstallPath = ""
         }
     })
 
     $installButton.Add_Click({
-        $target = $script:DetectedTarget
-        $kicadPath = $script:DetectedKicadPath
-        if (-not $target) {
-            $statusLabel.Text = "Please select a target directory first."
-            $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0xff, 0x6b, 0x6b)
-            return
+        try {
+            if (-not $pathBox.Text) { throw "Please select a target plugins directory." }
+            $installButton.Enabled = $false
+            $status.Text = "Installing..."
+            [System.Windows.Forms.Application]::DoEvents()
+            $result = Install-Plugin -TargetPluginsDir $pathBox.Text -KiCadInstallPath $script:selectedInstallPath -CreateShortcut $shortcutCheck.Checked
+            $message = "Install OK: $($result.Target)"
+            if ($result.Shortcut) { $message += "`nShortcut: $($result.Shortcut)" }
+            $status.Text = $message
+            $status.ForeColor = [System.Drawing.Color]::FromArgb(0x4c, 0xc7, 0xb0)
+        } catch {
+            $status.Text = "Install FAILED: $($_.Exception.Message)"
+            $status.ForeColor = [System.Drawing.Color]::FromArgb(0xff, 0x6b, 0x6b)
+        } finally {
+            $installButton.Enabled = $true
+            [System.Windows.Forms.Application]::DoEvents()
         }
-        if (-not (Test-Path -LiteralPath $PluginSource -PathType Container)) {
-            $statusLabel.Text = "Plugin source not found. Check repository integrity."
-            $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0xff, 0x6b, 0x6b)
-            return
-        }
-        $installButton.Enabled = $false
-        $statusLabel.Text = "Installing..."
-        $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x9a, 0xa4, 0xb2)
-        [System.Windows.Forms.Application]::DoEvents()
-
-        $result = Install-Plugin -TargetPluginsDir $target -KiCadInstallPath $kicadPath
-
-        if ($result.Ok) {
-            $statusLabel.Text = "Install OK -> $($result.Target)"
-            $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0x4c, 0xc7, 0xb0)
-            if ($result.Shortcut) {
-                $statusLabel.Text += " | Desktop shortcut created."
-            }
-        } else {
-            $statusLabel.Text = "Install FAILED: $($result.Error)"
-            $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0xff, 0x6b, 0x6b)
-        }
-        $installButton.Enabled = $true
-        [System.Windows.Forms.Application]::DoEvents()
     })
 
     [System.Windows.Forms.Application]::Run($form)
 }
 
 if (-not (Test-Path -LiteralPath $PluginSource -PathType Container)) {
-    Write-Host "ERROR: Plugin source directory not found: $PluginSource" -ForegroundColor Red
-    Write-Host "Run this script from within the kicad-ai-agent repository." -ForegroundColor Yellow
+    [System.Windows.Forms.MessageBox]::Show("Plugin source directory not found:`n$PluginSource", "KiCad AI Agent Installer", "OK", "Error") | Out-Null
     exit 1
 }
 

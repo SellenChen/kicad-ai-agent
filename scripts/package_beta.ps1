@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
-$Version = "v0.2.0-beta.1"
+$Version = "v0.2.1-beta.1"
 $Name = "kicad-ai-agent-beta-$Version"
 $Dist = Join-Path $Root "dist"
 $Zip = Join-Path $Dist "$Name.zip"

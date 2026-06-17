@@ -18,6 +18,11 @@ function Get-AgentProject {
         return (Resolve-Path -LiteralPath $ExplicitProject).Path
     }
 
+    $recentSchematicProject = Get-RecentSchematicProject
+    if ($recentSchematicProject) {
+        return $recentSchematicProject
+    }
+
     if (Test-Path -LiteralPath $LastProjectFile) {
         $last = (Get-Content -LiteralPath $LastProjectFile -Raw).Trim()
         if ($last -and (Test-Path -LiteralPath $last)) {
@@ -34,6 +39,31 @@ function Get-AgentProject {
         throw "No KiCad project selected."
     }
     return $dialog.FileName
+}
+
+function Get-RecentSchematicProject {
+    $kicadConfigRoot = Join-Path $env:APPDATA "kicad"
+    if (-not (Test-Path -LiteralPath $kicadConfigRoot)) {
+        return ""
+    }
+
+    $settingsFiles = @(Get-ChildItem -LiteralPath $kicadConfigRoot -Recurse -Filter "eeschema.json" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending)
+    foreach ($settingsFile in $settingsFiles) {
+        $raw = Get-Content -LiteralPath $settingsFile.FullName -Raw -ErrorAction SilentlyContinue
+        if (-not $raw) { continue }
+        $matches = [regex]::Matches($raw, '[A-Za-z]:\\\\(?:[^"\\]|\\.)+?\.kicad_sch')
+        foreach ($match in $matches) {
+            $schematic = ($match.Value -replace '\\\\', '\')
+            if (-not (Test-Path -LiteralPath $schematic)) { continue }
+            $project = [System.IO.Path]::ChangeExtension($schematic, ".kicad_pro")
+            if (Test-Path -LiteralPath $project) {
+                return (Resolve-Path -LiteralPath $project).Path
+            }
+            return (Resolve-Path -LiteralPath $schematic).Path
+        }
+    }
+    return ""
 }
 
 function Test-AgentReady {

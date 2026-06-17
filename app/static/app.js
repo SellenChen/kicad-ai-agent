@@ -193,7 +193,7 @@ async function sendMessage() {
 async function previewPlan() {
   if (!state.plan?.arguments) return;
   if (state.plan.tool !== "schematic.set_property") {
-    addMessage("agent", "当前计划包含新增元件，暂不提供 diff 预览；执行前会自动创建快照。");
+    addMessage("agent", "当前计划会生成或新增原理图内容，暂不提供 diff 预览；执行前会自动创建快照。");
     return;
   }
   const args = state.plan.arguments;
@@ -222,6 +222,11 @@ async function applyPlan() {
       result = await api("/api/tools/add-parts/apply", {
         method: "POST",
         body: JSON.stringify({ parts: args.parts || [] }),
+      });
+    } else if (state.plan.tool === "schematic.generate_circuit") {
+      result = await api("/api/tools/generate-circuit/apply", {
+        method: "POST",
+        body: JSON.stringify({ circuit: args.circuit || {} }),
       });
     } else {
       throw new Error(`暂不支持执行该计划：${state.plan.tool}`);

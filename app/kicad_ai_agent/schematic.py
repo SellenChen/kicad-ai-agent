@@ -47,6 +47,42 @@ def find_schematic(project_path: Path) -> Path:
     return matches[0]
 
 
+def ensure_schematic(project_path: Path) -> Path:
+    project_path = project_path.resolve()
+    if project_path.is_file() and project_path.suffix == ".kicad_sch":
+        if not project_path.exists():
+            create_empty_schematic(project_path)
+        return project_path
+    if project_path.is_file() and project_path.suffix == ".kicad_pro":
+        candidate = project_path.with_suffix(".kicad_sch")
+        if not candidate.exists():
+            create_empty_schematic(candidate)
+        return candidate
+    matches = sorted(project_path.glob("*.kicad_sch")) if project_path.exists() else []
+    if matches:
+        return matches[0]
+    candidate = project_path / f"{project_path.name}.kicad_sch"
+    create_empty_schematic(candidate)
+    return candidate
+
+
+def create_empty_schematic(schematic_path: Path) -> None:
+    schematic_path.parent.mkdir(parents=True, exist_ok=True)
+    schematic_uuid = str(uuid.uuid4())
+    schematic_path.write_text(
+        f'''(kicad_sch
+\t(version 20250114)
+\t(generator "kicad-ai-agent")
+\t(generator_version "0.2.1")
+\t(uuid "{schematic_uuid}")
+\t(paper "A4")
+\t(lib_symbols)
+)
+''',
+        encoding="utf-8",
+    )
+
+
 def project_file_for(schematic_path: Path) -> Path | None:
     candidate = schematic_path.with_suffix(".kicad_pro")
     return candidate if candidate.exists() else None
@@ -310,11 +346,12 @@ def _symbol_block(part: dict[str, str], x: float, y: float) -> str:
     value = part.get("value", "")
     lib_id = part.get("lib_id", "Device:R") or "Device:R"
     footprint = part.get("footprint", "")
+    rotation = int(float(part.get("rotation", 0) or 0))
     symbol_uuid = str(uuid.uuid4())
     instance_uuid = str(uuid.uuid4())
     return f'''\t(symbol
 \t\t(lib_id "{_escape(lib_id)}")
-\t\t(at {x:.2f} {y:.2f} 0)
+\t\t(at {x:.2f} {y:.2f} {rotation})
 \t\t(unit 1)
 \t\t(exclude_from_sim no)
 \t\t(in_bom yes)
@@ -368,3 +405,227 @@ def _symbol_block(part: dict[str, str], x: float, y: float) -> str:
 
 def _escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def plan_circuit_from_prompt(project_path: Path, prompt: str, model_text: str = "") -> dict[str, Any]:
+    text = f"{prompt}\n{model_text}".lower()
+    if not _looks_like_circuit_generation(text):
+        return {"ok": False, "reason": "未识别到电路生成意图。"}
+    circuit = _recipe_for_prompt(text)
+    schematic = ensure_schematic(project_path)
+    return {
+        "ok": True,
+        "requires_confirmation": True,
+        "tool": "schematic.generate_circuit",
+        "arguments": {
+            "schematic": str(schematic),
+            "circuit": circuit,
+        },
+        "validation": ["erc", "netlist"],
+    }
+
+
+def generate_circuit_preserving_format(schematic_path: Path, circuit: dict[str, Any]) -> dict[str, Any]:
+    text = schematic_path.read_text(encoding="utf-8")
+    insert_at = text.rfind("\n)")
+    if insert_at < 0:
+        raise ValueError("Could not find schematic root closing parenthesis")
+
+    snapshot_meta = create_snapshot(schematic_path, f"generate circuit: {circuit.get('name', 'untitled')}")
+    existing_refs = {item["ref"] for item in summary(schematic_path)["components"]}
+    components = _renumber_conflicting_components(circuit.get("components", []), existing_refs)
+    blocks: list[str] = []
+    for component in components:
+        blocks.append(_symbol_block(component, float(component["x"]), float(component["y"])))
+    for wire in circuit.get("wires", []):
+        blocks.append(_wire_block(wire))
+    for label in circuit.get("labels", []):
+        blocks.append(_label_block(label))
+    for junction in circuit.get("junctions", []):
+        blocks.append(_junction_block(junction))
+    for note in circuit.get("notes", []):
+        blocks.append(_text_block(note))
+
+    updated = text[:insert_at] + "\n" + "\n".join(blocks) + text[insert_at:]
+    schematic_path.write_text(updated, encoding="utf-8")
+    return {
+        "changed": True,
+        "snapshot": snapshot_meta,
+        "circuit": circuit.get("name", ""),
+        "components": [{"ref": item["ref"], "value": item.get("value", ""), "lib_id": item.get("lib_id", "")} for item in components],
+        "wires": len(circuit.get("wires", [])),
+        "labels": len(circuit.get("labels", [])),
+        "note": "已完成元件摆放和连线。请在 KiCad 中检查位置、符号库解析和 ERC 结果。",
+    }
+
+
+def _looks_like_circuit_generation(text: str) -> bool:
+    generation_words = ["生成", "创建", "搭建", "画", "设计", "generate", "create", "build", "draw"]
+    circuit_words = ["电路", "滤波", "积分", "微分", "方波", "三角波", "低通", "高通", "wave", "filter", "integrator", "differentiator"]
+    return any(word in text for word in generation_words) and any(word in text for word in circuit_words)
+
+
+def _recipe_for_prompt(text: str) -> dict[str, Any]:
+    if ("方波" in text and "三角波" in text) or ("square" in text and "triangle" in text):
+        return _recipe_square_to_triangle()
+    if "微分" in text or "differentiator" in text or "高通" in text:
+        return _recipe_differentiator()
+    if "积分" in text or "integrator" in text or "低通" in text:
+        return _recipe_integrator()
+    return _recipe_integrator()
+
+
+def _recipe_square_to_triangle() -> dict[str, Any]:
+    return {
+        "name": "1 kHz square-wave to triangle-wave RC integrator",
+        "description": "A first-order RC integrator / low-pass filter. For a 1 kHz square wave, R=10 kOhm and C=47 nF gives tau about 470 us.",
+        "components": [
+            {"ref": "R1", "value": "10K", "lib_id": "Device:R", "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal", "x": 90.0, "y": 70.0, "rotation": 90},
+            {"ref": "C1", "value": "47nF", "lib_id": "Device:C", "footprint": "Capacitor_THT:C_Disc_D5.1mm_W3.2mm_P5.00mm", "x": 120.0, "y": 84.0, "rotation": 0},
+            {"ref": "#PWR0101", "value": "GND", "lib_id": "power:GND", "footprint": "", "x": 120.0, "y": 99.0, "rotation": 0},
+        ],
+        "wires": [
+            {"points": [[65.0, 70.0], [87.46, 70.0]]},
+            {"points": [[92.54, 70.0], [120.0, 70.0]]},
+            {"points": [[120.0, 70.0], [120.0, 81.46]]},
+            {"points": [[120.0, 86.54], [120.0, 96.46]]},
+            {"points": [[120.0, 70.0], [145.0, 70.0]]},
+        ],
+        "junctions": [{"x": 120.0, "y": 70.0}],
+        "labels": [
+            {"text": "VIN_1KHZ_SQUARE", "x": 65.0, "y": 70.0, "rotation": 0},
+            {"text": "VOUT_TRIANGLE", "x": 145.0, "y": 70.0, "rotation": 0},
+        ],
+        "notes": [
+            {"text": "1 kHz square to triangle filter: R=10K, C=47nF, tau=470us. Output is taken on the capacitor node.", "x": 65.0, "y": 110.0},
+        ],
+    }
+
+
+def _recipe_integrator() -> dict[str, Any]:
+    return {
+        "name": "Simple RC integrator",
+        "description": "Passive RC low-pass integrator. Output is measured on the capacitor node.",
+        "components": [
+            {"ref": "R1", "value": "10K", "lib_id": "Device:R", "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal", "x": 90.0, "y": 70.0, "rotation": 90},
+            {"ref": "C1", "value": "100nF", "lib_id": "Device:C", "footprint": "Capacitor_THT:C_Disc_D5.1mm_W3.2mm_P5.00mm", "x": 120.0, "y": 84.0, "rotation": 0},
+            {"ref": "#PWR0101", "value": "GND", "lib_id": "power:GND", "footprint": "", "x": 120.0, "y": 99.0, "rotation": 0},
+        ],
+        "wires": [
+            {"points": [[65.0, 70.0], [87.46, 70.0]]},
+            {"points": [[92.54, 70.0], [120.0, 70.0]]},
+            {"points": [[120.0, 70.0], [120.0, 81.46]]},
+            {"points": [[120.0, 86.54], [120.0, 96.46]]},
+            {"points": [[120.0, 70.0], [145.0, 70.0]]},
+        ],
+        "junctions": [{"x": 120.0, "y": 70.0}],
+        "labels": [
+            {"text": "VIN", "x": 65.0, "y": 70.0, "rotation": 0},
+            {"text": "VOUT_INT", "x": 145.0, "y": 70.0, "rotation": 0},
+        ],
+        "notes": [{"text": "Simple RC integrator / low-pass filter. Adjust R*C for the target waveform period.", "x": 65.0, "y": 110.0}],
+    }
+
+
+def _recipe_differentiator() -> dict[str, Any]:
+    return {
+        "name": "Simple RC differentiator",
+        "description": "Passive RC high-pass differentiator. Output is measured on the resistor node.",
+        "components": [
+            {"ref": "C1", "value": "10nF", "lib_id": "Device:C", "footprint": "Capacitor_THT:C_Disc_D5.1mm_W3.2mm_P5.00mm", "x": 90.0, "y": 70.0, "rotation": 90},
+            {"ref": "R1", "value": "10K", "lib_id": "Device:R", "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal", "x": 120.0, "y": 84.0, "rotation": 0},
+            {"ref": "#PWR0101", "value": "GND", "lib_id": "power:GND", "footprint": "", "x": 120.0, "y": 99.0, "rotation": 0},
+        ],
+        "wires": [
+            {"points": [[65.0, 70.0], [87.46, 70.0]]},
+            {"points": [[92.54, 70.0], [120.0, 70.0]]},
+            {"points": [[120.0, 70.0], [120.0, 81.46]]},
+            {"points": [[120.0, 86.54], [120.0, 96.46]]},
+            {"points": [[120.0, 70.0], [145.0, 70.0]]},
+        ],
+        "junctions": [{"x": 120.0, "y": 70.0}],
+        "labels": [
+            {"text": "VIN", "x": 65.0, "y": 70.0, "rotation": 0},
+            {"text": "VOUT_DIFF", "x": 145.0, "y": 70.0, "rotation": 0},
+        ],
+        "notes": [{"text": "Simple RC differentiator / high-pass filter. Output pulses appear on the resistor node.", "x": 65.0, "y": 110.0}],
+    }
+
+
+def _renumber_conflicting_components(components: list[dict[str, Any]], existing_refs: set[str]) -> list[dict[str, Any]]:
+    used = set(existing_refs)
+    result = []
+    for component in components:
+        updated = dict(component)
+        ref = str(updated.get("ref", "")).upper()
+        if ref in used:
+            prefix = "".join(ch for ch in ref if not ch.isdigit()) or ref
+            number = 1
+            while f"{prefix}{number}" in used:
+                number += 1
+            ref = f"{prefix}{number}"
+            updated["ref"] = ref
+        used.add(ref)
+        result.append(updated)
+    return result
+
+
+def _wire_block(wire: dict[str, Any]) -> str:
+    points = wire.get("points", [])
+    if len(points) < 2:
+        raise ValueError("wire requires at least two points")
+    point_text = " ".join(f"(xy {float(x):.2f} {float(y):.2f})" for x, y in points)
+    return f'''\t(wire
+\t\t(pts
+\t\t\t{point_text}
+\t\t)
+\t\t(stroke
+\t\t\t(width 0)
+\t\t\t(type default)
+\t\t)
+\t\t(uuid "{uuid.uuid4()}")
+\t)'''
+
+
+def _label_block(label: dict[str, Any]) -> str:
+    text = str(label.get("text", "NET"))
+    x = float(label.get("x", 0))
+    y = float(label.get("y", 0))
+    rotation = int(float(label.get("rotation", 0) or 0))
+    return f'''\t(label "{_escape(text)}"
+\t\t(at {x:.2f} {y:.2f} {rotation})
+\t\t(effects
+\t\t\t(font
+\t\t\t\t(size 1.27 1.27)
+\t\t\t)
+\t\t\t(justify left bottom)
+\t\t)
+\t\t(uuid "{uuid.uuid4()}")
+\t)'''
+
+
+def _junction_block(junction: dict[str, Any]) -> str:
+    x = float(junction.get("x", 0))
+    y = float(junction.get("y", 0))
+    return f'''\t(junction
+\t\t(at {x:.2f} {y:.2f})
+\t\t(diameter 0)
+\t\t(color 0 0 0 0)
+\t\t(uuid "{uuid.uuid4()}")
+\t)'''
+
+
+def _text_block(note: dict[str, Any]) -> str:
+    text = str(note.get("text", ""))
+    x = float(note.get("x", 0))
+    y = float(note.get("y", 0))
+    return f'''\t(text "{_escape(text)}"
+\t\t(at {x:.2f} {y:.2f} 0)
+\t\t(effects
+\t\t\t(font
+\t\t\t\t(size 1.27 1.27)
+\t\t\t)
+\t\t\t(justify left bottom)
+\t\t)
+\t\t(uuid "{uuid.uuid4()}")
+\t)'''

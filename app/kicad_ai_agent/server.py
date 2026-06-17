@@ -19,7 +19,10 @@ from .provider import make_provider
 from .settings import DEEPSEEK_MODELS, load_settings, public_settings, save_settings
 from .schematic import (
     add_parts_preserving_format,
+    ensure_schematic,
     find_schematic,
+    generate_circuit_preserving_format,
+    plan_circuit_from_prompt,
     plan_from_prompt,
     plan_parts_from_text,
     restore_snapshot,
@@ -41,7 +44,7 @@ class AgentState:
 
     @property
     def schematic_path(self) -> Path:
-        return find_schematic(self.project_path)
+        return ensure_schematic(self.project_path)
 
 
 class AgentHandler(BaseHTTPRequestHandler):
@@ -169,6 +172,8 @@ class AgentHandler(BaseHTTPRequestHandler):
                 plan = plan_from_prompt(self.state.project_path, message)
                 if not plan.get("ok"):
                     plan = plan_parts_from_text(self.state.project_path, str(provider_reply.get("content", "")))
+                if not plan.get("ok"):
+                    plan = plan_circuit_from_prompt(self.state.project_path, message, str(provider_reply.get("content", "")))
                 self.state.last_plan = plan if plan.get("ok") else None
                 self._json(200, {"ok": True, "reply": provider_reply, "plan": plan})
             elif route == "/api/settings":
@@ -191,6 +196,13 @@ class AgentHandler(BaseHTTPRequestHandler):
                 if not isinstance(parts, list):
                     raise ValueError("parts must be a list")
                 result = add_parts_preserving_format(self.state.schematic_path, parts)
+                validation = validate_schematic(self.state.schematic_path)
+                self._json(200, {"ok": True, "result": result, "validation": validation})
+            elif route == "/api/tools/generate-circuit/apply":
+                circuit = body.get("circuit", {})
+                if not isinstance(circuit, dict):
+                    raise ValueError("circuit must be an object")
+                result = generate_circuit_preserving_format(self.state.schematic_path, circuit)
                 validation = validate_schematic(self.state.schematic_path)
                 self._json(200, {"ok": True, "result": result, "validation": validation})
             elif route == "/api/validate":
@@ -231,6 +243,11 @@ class AgentHandler(BaseHTTPRequestHandler):
             if not isinstance(parts, list):
                 raise ValueError("parts must be a list")
             result = add_parts_preserving_format(self.state.schematic_path, parts)
+        elif tool == "schematic.generate_circuit":
+            circuit = args.get("circuit", {})
+            if not isinstance(circuit, dict):
+                raise ValueError("circuit must be an object")
+            result = generate_circuit_preserving_format(self.state.schematic_path, circuit)
         else:
             raise ValueError(f"Unsupported tool plan: {tool}")
         validation = validate_schematic(self.state.schematic_path)
@@ -247,6 +264,9 @@ class AgentHandler(BaseHTTPRequestHandler):
                     "回答要简洁，必要时给出可执行工具计划。"
                     "不要声称已经修改文件，除非工具执行结果明确显示已经修改。"
                     "如果需要新增元件，请尽量用 Markdown 表格列出：参考位 | 值 | 封装 | 符号库。"
+                    "如果用户要求生成、搭建或设计简单电路，请先给出电路原理、关键参数和可执行计划。"
+                    "支持的本地工具包括 schematic.set_property、schematic.add_parts、schematic.generate_circuit。"
+                    "对于 schematic.generate_circuit，可描述 components、wires、labels、notes；本地执行器会负责写入 KiCad。"
                 ),
             }
         ]

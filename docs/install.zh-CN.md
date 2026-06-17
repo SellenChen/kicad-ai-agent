@@ -5,7 +5,7 @@
 双击运行，完全无需命令行：
 
 ```powershell
-.\scripts\install_plugin_gui.ps1
+.\scripts\install_plugin_gui.cmd
 ```
 
 安装器会：

@@ -13,7 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_SRC = ROOT / "work" / "stage0_cli" / "amplifier-ac"
 SAMPLE_DST = ROOT / "app" / "samples" / "amplifier-ac-stage1"
+EMPTY_DST = ROOT / "app" / "samples" / "empty-circuit-stage"
 SETTINGS_PATH = ROOT / "work" / "stage1_runtime" / "settings.json"
+sys.path.insert(0, str(ROOT / "app"))
+
+from kicad_ai_agent.kicad_cli import validate_schematic
+from kicad_ai_agent.schematic import generate_circuit_preserving_format, plan_circuit_from_prompt, summary as schematic_summary
 
 
 def request_json(url: str, body: dict | None = None) -> dict:
@@ -37,6 +42,11 @@ def main() -> None:
     if SAMPLE_DST.exists():
         shutil.rmtree(SAMPLE_DST)
     shutil.copytree(SAMPLE_SRC, SAMPLE_DST)
+    if EMPTY_DST.exists():
+        shutil.rmtree(EMPTY_DST)
+    EMPTY_DST.mkdir(parents=True)
+    empty_project = EMPTY_DST / "empty-circuit-stage.kicad_pro"
+    empty_project.write_text("{}", encoding="utf-8")
     project = SAMPLE_DST / "amplifier-ac.kicad_pro"
     port = 8877
     process = subprocess.Popen(
@@ -91,6 +101,11 @@ def main() -> None:
         footprints = request_json(f"{base}/api/library/footprints", {"query": "SOT"})
         diagnostics = request_json(f"{base}/api/diagnostics")
         after = request_json(f"{base}/api/project/summary")
+        empty_plan = plan_circuit_from_prompt(empty_project, "\u8bf7\u751f\u6210\u4e00\u4e2a1kHz\u65b9\u6ce2\u8f6c\u4e09\u89d2\u6ce2\u7684\u6ee4\u6ce2\u7535\u8def")
+        empty_schematic = Path(empty_plan["arguments"]["schematic"])
+        generated = generate_circuit_preserving_format(empty_schematic, empty_plan["arguments"]["circuit"])
+        generated_validation = validate_schematic(empty_schematic)
+        generated_summary = schematic_summary(empty_schematic)
         result = {
             "health": health,
             "settings_models": [item["id"] for item in settings_before["models"]],
@@ -119,6 +134,14 @@ def main() -> None:
             "footprint_search_results": len(footprints["footprints"]["results"]),
             "diagnostics_cli_exists": diagnostics["diagnostics"]["kicad_cli"]["exists"],
             "r4_after": next(item for item in after["summary"]["components"] if item["ref"] == "R4"),
+            "generate_from_empty": {
+                "tool": empty_plan["tool"],
+                "changed": generated["changed"],
+                "components": generated_summary["placed_symbols"],
+                "wires": generated_summary["wires"],
+                "labels": generated_summary["labels"],
+                "netlist_ok": generated_validation["netlist"].get("ok"),
+            },
         }
         print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
