@@ -30,19 +30,19 @@ $env:KICAD_AGENT_KICAD_CLI="D:\KiCad\10.0\bin\kicad-cli.exe"
 
 ## 3. 安装 KiCad 插件
 
-复制：
+推荐直接运行安装脚本：
 
-```text
-app\kicad_plugin\kicad_ai_agent_launcher
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_plugin.ps1
 ```
 
-到：
+脚本会自动清理旧插件并复制新版插件到：
 
 ```text
 %APPDATA%\kicad\10.0\scripting\plugins\kicad_ai_agent_launcher
 ```
 
-如果目录不存在，请手动创建。
+如果 KiCad 已经打开，请重启 KiCad 或 PCB Editor，让它重新加载插件。
 
 ## 4. 启动
 
@@ -78,4 +78,9 @@ $env:KICAD_AGENT_API_KEY="<你的 API Key>"
 $env:KICAD_AGENT_MODEL="<模型名称>"
 ```
 
-当前 Beta 已预留模型接口，但主要能力仍通过本地工具链验证。
+侧边栏顶部也可以直接选择 DeepSeek 模型并保存 API Key。当前可选：
+
+- DeepSeek V4 Pro
+- DeepSeek V4 Flash
+
+保存后，对话会随请求上传紧凑的原理图特征 JSON，帮助模型理解当前工程。

@@ -1,14 +1,17 @@
 :root {
-  color-scheme: light;
-  --bg: #f6f7f8;
-  --panel: #ffffff;
-  --text: #20252b;
-  --muted: #66707c;
-  --line: #d9dee5;
-  --accent: #157f72;
-  --accent-strong: #0f655b;
-  --danger: #b83a3a;
-  --code: #12202a;
+  color-scheme: dark;
+  --bg: #0f1117;
+  --panel: #151922;
+  --panel-2: #1b202b;
+  --panel-3: #202635;
+  --text: #e7eaf0;
+  --muted: #9aa4b2;
+  --line: #2a3141;
+  --accent: #4cc7b0;
+  --accent-strong: #27a58f;
+  --danger: #ff6b6b;
+  --warning: #ffc857;
+  --code: #0a0d12;
 }
 
 * {
@@ -17,48 +20,55 @@
 
 body {
   margin: 0;
+  overflow: hidden;
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", Arial, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
-button {
+button,
+select,
+input,
+textarea {
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
-  min-height: 36px;
-  padding: 0 12px;
   border-radius: 6px;
+}
+
+button {
+  min-height: 32px;
+  padding: 0 10px;
   cursor: pointer;
 }
 
 button:hover {
   border-color: var(--accent);
-}
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
   color: #fff;
 }
 
-button.primary:hover {
+button.primary {
   background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #04110e;
+  font-weight: 600;
 }
 
-.sidebar {
-  width: min(100vw, 460px);
-  min-height: 100vh;
-  margin: 0 auto;
+.agent-shell {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto auto auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto auto;
   background: var(--panel);
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
@@ -67,29 +77,72 @@ button.primary:hover {
 .topbar {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 14px;
   border-bottom: 1px solid var(--line);
+  background: #10141c;
 }
 
 .topbar h1 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.2;
 }
 
 .topbar p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   word-break: break-all;
 }
 
-#refreshBtn,
-#dismissPlanBtn {
-  width: 36px;
+.icon-btn {
+  width: 32px;
   padding: 0;
   flex: 0 0 auto;
+}
+
+.model-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-row label {
+  color: var(--muted);
+}
+
+.field-row select,
+.field-row input {
+  min-height: 32px;
+  min-width: 0;
+  padding: 0 9px;
+}
+
+.api-key-row {
+  grid-template-columns: 58px 1fr auto;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.status-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .summary-grid {
@@ -99,8 +152,9 @@ button.primary:hover {
 }
 
 .summary-grid div {
-  padding: 10px 12px;
+  padding: 9px 10px;
   border-right: 1px solid var(--line);
+  background: var(--panel-2);
 }
 
 .summary-grid div:last-child {
@@ -110,32 +164,33 @@ button.primary:hover {
 .summary-grid span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .summary-grid strong {
   display: block;
-  margin-top: 4px;
-  font-size: 17px;
+  margin-top: 3px;
+  font-size: 16px;
 }
 
 .chat {
   overflow: auto;
-  padding: 14px;
-  background: #fafbfc;
+  min-height: 0;
+  padding: 12px;
+  background: var(--bg);
 }
 
 .message {
-  margin: 0 0 12px;
-  padding: 10px 12px;
+  margin: 0 0 10px;
+  padding: 10px 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
 }
 
 .message.user {
-  border-color: #b8d7d2;
-  background: #eef8f6;
+  border-color: #256d62;
+  background: #10241f;
 }
 
 .message p {
@@ -144,25 +199,42 @@ button.primary:hover {
   white-space: pre-wrap;
 }
 
+.thinking-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #3a4354;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .message pre,
 .plan pre {
   margin: 8px 0 0;
   padding: 10px;
   border-radius: 6px;
   overflow: auto;
+  max-height: 260px;
   background: var(--code);
-  color: #e7eef4;
-  font-size: 12px;
+  color: #dbe7f3;
+  font-size: 11px;
 }
 
-.plan {
-  border-top: 1px solid var(--line);
-  background: #fff;
-  padding: 12px;
-}
-
-.tools,
-.search {
+.tool-strip,
+.search-bar {
   display: grid;
   gap: 8px;
   padding: 10px 12px;
@@ -170,25 +242,29 @@ button.primary:hover {
   background: var(--panel);
 }
 
-.tools {
-  grid-template-columns: repeat(4, 1fr);
+.tool-strip {
+  grid-template-columns: repeat(5, 1fr);
 }
 
-.tools button {
-  padding: 0 6px;
+.tool-strip button {
+  padding: 0 5px;
   font-size: 12px;
 }
 
-.search {
+.search-bar {
   grid-template-columns: 1fr auto auto;
 }
 
-.search input {
+.search-bar input {
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  min-height: 36px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+.plan {
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 12px;
 }
 
 .plan-head {
@@ -199,7 +275,7 @@ button.primary:hover {
 
 .plan h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .actions {
@@ -214,19 +290,19 @@ button.primary:hover {
   gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--line);
-  background: var(--panel);
+  background: #10141c;
 }
 
-.composer input {
+.composer textarea {
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  min-height: 38px;
-  padding: 0 11px;
+  max-height: 96px;
+  resize: none;
+  padding: 8px 10px;
+  line-height: 1.35;
 }
 
-@media (max-width: 520px) {
-  .sidebar {
+@media (max-width: 480px) {
+  .agent-shell {
     width: 100vw;
     border: 0;
   }
@@ -235,7 +311,7 @@ button.primary:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .tools {
-    grid-template-columns: repeat(2, 1fr);
+  .tool-strip {
+    grid-template-columns: repeat(3, 1fr);
   }
 }

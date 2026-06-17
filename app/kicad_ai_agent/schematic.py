@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,14 @@ from .sexpr import Atom, head, parse, properties, walk
 
 
 REF_VALUE_RE = re.compile(
-    r'(?:把|将)?\s*([A-Z]+[0-9]+)\s*(?:的)?(?:value|阻值|值|参数)?\s*(?:改成|修改为|设为|=)\s*([0-9.]+\s*[kKmMuUnNpPfF]?|[0-9.]+[a-zA-Z]+)'
+    r"(?:把|将|请把|请将)?\s*([A-Z]+[0-9]+)\s*(?:的)?\s*(?:value|值|阻值|容值|参数)?\s*"
+    r"(?:改成|修改为|设为|设置为|=|to)\s*([0-9.]+\s*[kKmMuUnNpPfFΩRr]*|[0-9.]+[a-zA-ZΩ]+)",
+    re.IGNORECASE,
+)
+
+TABLE_PART_RE = re.compile(
+    r"^\|\s*([A-Za-z]+\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*([^|]+?)\s*\|",
+    re.MULTILINE,
 )
 
 
@@ -242,3 +250,121 @@ def plan_from_prompt(project_path: Path, prompt: str) -> dict[str, Any]:
         },
         "validation": ["erc", "netlist"],
     }
+
+
+def plan_parts_from_text(project_path: Path, text: str) -> dict[str, Any]:
+    parts = []
+    for match in TABLE_PART_RE.finditer(text):
+        ref = match.group(1).strip().upper()
+        if ref.lower() in {"ref", "reference", "参考位", "位号"}:
+            continue
+        value = match.group(2).strip()
+        footprint = match.group(3).strip()
+        lib_id = match.group(4).strip()
+        if not lib_id or lib_id in {"同上", "-"}:
+            lib_id = "Device:R" if ref.startswith("R") else "Device:C" if ref.startswith("C") else "Device:R"
+        parts.append({"ref": ref, "value": value, "footprint": footprint, "lib_id": lib_id})
+    if not parts:
+        return {"ok": False, "reason": "没有从上一轮回复中识别出可新增的元件表格。"}
+    schematic = find_schematic(project_path)
+    existing_refs = {item["ref"] for item in summary(schematic)["components"]}
+    filtered = [part for part in parts if part["ref"] not in existing_refs]
+    return {
+        "ok": True,
+        "requires_confirmation": True,
+        "tool": "schematic.add_parts",
+        "arguments": {
+            "schematic": str(schematic),
+            "parts": filtered,
+            "skipped_existing": sorted(set(part["ref"] for part in parts) & existing_refs),
+        },
+        "validation": ["erc", "netlist"],
+    }
+
+
+def add_parts_preserving_format(schematic_path: Path, parts: list[dict[str, str]]) -> dict[str, Any]:
+    if not parts:
+        return {"changed": False, "reason": "没有需要新增的元件。"}
+    text = schematic_path.read_text(encoding="utf-8")
+    insert_at = text.rfind("\n)")
+    if insert_at < 0:
+        raise ValueError("Could not find schematic root closing parenthesis")
+    snapshot_meta = create_snapshot(schematic_path, "add parts from agent plan")
+    blocks = []
+    x = 25.4
+    y = 25.4
+    for index, part in enumerate(parts):
+        blocks.append(_symbol_block(part, x + (index % 4) * 25.4, y + (index // 4) * 20.32))
+    updated = text[:insert_at] + "\n" + "\n".join(blocks) + text[insert_at:]
+    schematic_path.write_text(updated, encoding="utf-8")
+    return {
+        "changed": True,
+        "snapshot": snapshot_meta,
+        "added": parts,
+        "note": "已添加元件实例；当前版本不会自动完成连线，请在 KiCad 中检查位置并继续布线。",
+    }
+
+
+def _symbol_block(part: dict[str, str], x: float, y: float) -> str:
+    ref = part["ref"]
+    value = part.get("value", "")
+    lib_id = part.get("lib_id", "Device:R") or "Device:R"
+    footprint = part.get("footprint", "")
+    symbol_uuid = str(uuid.uuid4())
+    instance_uuid = str(uuid.uuid4())
+    return f'''\t(symbol
+\t\t(lib_id "{_escape(lib_id)}")
+\t\t(at {x:.2f} {y:.2f} 0)
+\t\t(unit 1)
+\t\t(exclude_from_sim no)
+\t\t(in_bom yes)
+\t\t(on_board yes)
+\t\t(dnp no)
+\t\t(uuid "{symbol_uuid}")
+\t\t(property "Reference" "{_escape(ref)}"
+\t\t\t(at {x:.2f} {y - 2.54:.2f} 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t\t(property "Value" "{_escape(value)}"
+\t\t\t(at {x:.2f} {y + 2.54:.2f} 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t\t(property "Footprint" "{_escape(footprint)}"
+\t\t\t(at {x:.2f} {y + 5.08:.2f} 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(hide yes)
+\t\t\t)
+\t\t)
+\t\t(property "Datasheet" "~"
+\t\t\t(at {x:.2f} {y + 7.62:.2f} 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(hide yes)
+\t\t\t)
+\t\t)
+\t\t(instances
+\t\t\t(project ""
+\t\t\t\t(path "/{instance_uuid}"
+\t\t\t\t\t(reference "{_escape(ref)}")
+\t\t\t\t\t(unit 1)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t)'''
+
+
+def _escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')

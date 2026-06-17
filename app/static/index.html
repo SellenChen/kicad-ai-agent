@@ -7,14 +7,31 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <aside class="sidebar">
+    <aside class="agent-shell">
       <header class="topbar">
         <div>
           <h1>KiCad AI Agent</h1>
-          <p id="projectPath">正在读取工程...</p>
+          <p id="projectPath">正在连接 KiCad 工程...</p>
         </div>
-        <button id="refreshBtn" title="刷新工程">↻</button>
+        <button id="refreshBtn" class="icon-btn" title="刷新">↻</button>
       </header>
+
+      <section class="model-panel">
+        <div class="field-row">
+          <label for="modelSelect">模型</label>
+          <select id="modelSelect"></select>
+        </div>
+        <div class="field-row api-key-row">
+          <label for="apiKeyInput">API Key</label>
+          <input id="apiKeyInput" type="password" placeholder="输入 DeepSeek API Key" autocomplete="off" />
+          <button id="saveSettingsBtn">保存</button>
+        </div>
+        <label class="toggle-row">
+          <input id="uploadFeaturesToggle" type="checkbox" />
+          <span>随对话上传原理图特征</span>
+        </label>
+        <p id="settingsStatus" class="status-line">未配置 API Key 时使用本地 mock 模式。</p>
+      </section>
 
       <section class="summary-grid" id="summaryGrid">
         <div><span>符号</span><strong>--</strong></div>
@@ -25,27 +42,28 @@
 
       <main class="chat" id="chatLog">
         <article class="message agent">
-          <p>我已经连接到本地 KiCad 工程。可以让我修改元件参数、运行 ERC、导出 netlist，或解释检查结果。</p>
+          <p>我已准备好协助你检查工程、解释 ERC、导出 netlist，或按确认后的计划修改原理图。</p>
         </article>
       </main>
 
-      <section class="tools">
-        <button id="validateBtn">ERC + Netlist</button>
-        <button id="explainErcBtn">解释 ERC</button>
-        <button id="spiceBtn">导出 SPICE</button>
+      <section class="tool-strip">
+        <button id="featuresBtn">特征</button>
+        <button id="validateBtn">ERC</button>
+        <button id="explainErcBtn">解释</button>
+        <button id="spiceBtn">SPICE</button>
         <button id="snapshotsBtn">快照</button>
       </section>
 
-      <section class="search">
-        <input id="searchInput" placeholder="搜索符号/封装，例如 resistor、SOT" />
+      <section class="search-bar">
+        <input id="searchInput" placeholder="搜索符号/封装，例如 Device、SOT" />
         <button id="symbolSearchBtn">符号</button>
         <button id="footprintSearchBtn">封装</button>
       </section>
 
       <section class="plan" id="planPanel" hidden>
         <div class="plan-head">
-          <h2>待执行计划</h2>
-          <button id="dismissPlanBtn" title="关闭">×</button>
+          <h2>待确认计划</h2>
+          <button id="dismissPlanBtn" class="icon-btn" title="关闭">×</button>
         </div>
         <pre id="planText"></pre>
         <div class="actions">
@@ -55,8 +73,8 @@
       </section>
 
       <footer class="composer">
-        <input id="messageInput" placeholder="例如：把 R4 改成 2K" />
-        <button id="sendBtn">发送</button>
+        <textarea id="messageInput" rows="2" placeholder="问我工程问题，或输入：把 R4 改成 2K"></textarea>
+        <button id="sendBtn" class="primary">发送</button>
       </footer>
     </aside>
 

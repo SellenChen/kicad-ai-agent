@@ -53,13 +53,28 @@ python .\app\scripts\self_test.py
 app\kicad_plugin\kicad_ai_agent_launcher
 ```
 
+推荐安装方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_plugin.ps1
+```
+
 Windows 用户插件目录：
 
 ```text
 %APPDATA%\kicad\10.0\scripting\plugins\kicad_ai_agent_launcher
 ```
 
-安装后打开 KiCad PCB Editor，刷新或重启插件，点击 `KiCad AI Agent` 即可启动本地侧边栏。
+安装后打开 KiCad PCB Editor，刷新或重启插件，点击 `KiCad AI Agent` 即可启动本地黑夜模式侧边栏。
+
+## DeepSeek 配置
+
+侧边栏顶部可以选择 DeepSeek 模型并输入 API Key。当前可选：
+
+- DeepSeek V4 Pro
+- DeepSeek V4 Flash
+
+默认开启“随对话上传原理图特征”，Agent 会上传紧凑的原理图摘要、元件分组、常见值、电源符号和关键有源器件信息，帮助模型理解工程上下文。
 
 ## 文档
 
