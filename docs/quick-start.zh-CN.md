@@ -11,27 +11,57 @@
 本项目已在以下环境验证：
 
 ```text
-KiCad 10.0.3
+KiCad 10.0.x
 Python 3.13
 Windows
 ```
 
-## 2. 启动本地 Agent
+## 2. 安装插件
 
-在项目根目录运行：
+### 推荐：GUI 安装器
+
+双击运行，无需命令行：
+
+```powershell
+.\scripts\install_plugin_gui.ps1
+```
+
+安装器自动检测 KiCad 版本，一站式安装插件 + 桌面快捷方式。
+
+### 备选：CLI 安装
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_plugin.ps1
+```
+
+## 3. 启动本地 Agent
+
+### 命令行启动
 
 ```powershell
 cd app
 python .\run_agent.py --project .\samples\amplifier-ac-stage1\amplifier-ac.kicad_pro --host 127.0.0.1 --port 8765
 ```
 
-打开浏览器：
+浏览器打开 `http://127.0.0.1:8765`。
 
-```text
-http://127.0.0.1:8765
-```
+### 通过 KiCad 启动
 
-## 3. 试用自然语言修改
+打开 KiCad PCB Editor，点击 **工具 > KiCad AI Agent**，插件会自动启动服务并打开侧边栏。
+
+### 通过桌面快捷方式启动
+
+双击桌面上的 `KiCad AI Agent.lnk`（由安装脚本自动创建）。
+
+## 4. 配置模型
+
+侧边栏顶部模型配置面板：
+
+1. 选择 DeepSeek V4 Pro 或 DeepSeek V4 Flash
+2. 输入 API Key，点击「保存」
+3. 未配置 API Key 时使用本地 mock 模式
+
+## 5. 试用对话
 
 在输入框中输入：
 
@@ -39,50 +69,25 @@ http://127.0.0.1:8765
 把 R4 改成 2K
 ```
 
-Agent 会生成工具计划，点击：
+Agent 会：
+1. 显示 Thinking 状态
+2. 生成可执行计划
+3. 显示在计划面板中
+4. 点击「执行并校验」或直接回复「执行」
 
-1. `预览`
-2. `执行并校验`
-
-执行后会：
-
-- 创建快照
-- 修改 `.kicad_sch`
-- 运行 ERC
-- 导出 netlist
-- 显示结果
-
-## 4. 运行自测
-
-在项目根目录运行：
+## 6. 运行自测
 
 ```powershell
 python .\app\scripts\self_test.py
 ```
 
-自测会自动验证：
+自测验证：
 
 - 服务启动
 - 工程摘要
-- 工具计划
-- 保格式 patch
-- ERC 校验
-- netlist 导出
+- set_value 预览和执行
+- add_parts 执行
+- ERC/netlist 校验
 - ERC 解释
 - 符号/封装库搜索
-
-## 5. 通过 KiCad 启动
-
-将插件目录复制到 KiCad 用户插件目录：
-
-```text
-app\kicad_plugin\kicad_ai_agent_launcher
-```
-
-目标路径：
-
-```text
-%APPDATA%\kicad\10.0\scripting\plugins\kicad_ai_agent_launcher
-```
-
-然后打开 KiCad PCB Editor，刷新或重启插件，点击 `KiCad AI Agent`。
+- 环境诊断
