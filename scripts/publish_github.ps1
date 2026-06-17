@@ -29,12 +29,7 @@ try {
         git -c safe.directory="$SafeRoot" push -u origin main
     }
 
-    $existing = gh release view $Tag 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        gh release upload $Tag $Zip --clobber
-    } else {
-        gh release create $Tag $Zip --title "KiCad AI Agent $Tag" --notes-file $Notes --prerelease
-    }
+    gh release create $Tag $Zip -R "$Owner/$RepoName" --target main --title "KiCad AI Agent $Tag" --notes-file $Notes --prerelease
 } finally {
     Pop-Location
 }
